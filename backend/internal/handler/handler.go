@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -54,20 +53,9 @@ func (h *Hub) Broadcast(msg model.WebSocketMessage) {
 }
 
 func NewHandler(svc *service.Service) *Handler {
-	h := &Handler{svc: svc, hub: NewHub()}
-	go h.simulateUpdates()
-	return h
-}
-
-func (h *Handler) simulateUpdates() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		h.hub.Broadcast(model.WebSocketMessage{
-			Event:   "agent_update",
-			Payload: map[string]string{"status": "pulse"},
-		})
-	}
+	handler := &Handler{svc: svc, hub: NewHub()}
+	svc.SetBroadcaster(handler.hub.Broadcast)
+	return handler
 }
 
 func (h *Handler) GetAgents(c *gin.Context) {
@@ -88,6 +76,22 @@ func (h *Handler) GetTasks(c *gin.Context) {
 	c.JSON(200, gin.H{"data": tasks, "error": nil})
 }
 
+func (h *Handler) GetTaskEvents(c *gin.Context) {
+	taskID := c.Param("id")
+	if taskID == "" {
+		c.JSON(400, gin.H{"data": nil, "error": "Task ID is required"})
+		return
+	}
+
+	events, err := h.svc.GetTaskEvents(taskID)
+	if err != nil {
+		c.JSON(500, gin.H{"data": nil, "error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"data": events, "error": nil})
+}
+
 func (h *Handler) CreateTask(c *gin.Context) {
 	var req CreateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -96,6 +100,10 @@ func (h *Handler) CreateTask(c *gin.Context) {
 	}
 	if req.Title == "" {
 		c.JSON(400, gin.H{"data": nil, "error": "Title is required"})
+		return
+	}
+	if req.AgentID == "" {
+		c.JSON(400, gin.H{"data": nil, "error": "Agent ID is required"})
 		return
 	}
 

@@ -24,6 +24,7 @@ import (
 )
 
 func main() {
+	logrus.Info("version v0.0.3")
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 

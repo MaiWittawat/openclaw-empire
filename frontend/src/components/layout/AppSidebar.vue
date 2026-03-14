@@ -35,24 +35,23 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useTasksStore } from '@/stores/tasks'
 import { useAgentsStore } from '@/stores/agents'
 
 const tasksStore = useTasksStore()
 const agentsStore = useAgentsStore()
 
-const navItems = [
+const navItems = computed(() => [
   { to: '/dashboard', icon: '⊞', label: 'DASHBOARD' },
-  { to: '/agents', icon: '◈', label: 'AGENTS', badge: 4 },
-  { to: '/tasks', icon: '▤', label: 'TASKS', badge: 12 },
+  { to: '/agents', icon: '◈', label: 'AGENTS', badge: agentsStore.agents.length || null },
+  { to: '/tasks', icon: '▤', label: 'TASKS', badge: tasksStore.tasks.length || null },
   {
     to: '/telegram',
     icon: '✉',
     label: 'TELEGRAM',
-    badge: 3,
-    badgeStyle: 'background:var(--red)',
   },
-]
+])
 </script>
 
 <style scoped>

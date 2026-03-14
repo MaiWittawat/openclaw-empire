@@ -10,14 +10,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
 
 	"github.com/MaiWittawat/openclaw-empire/internal/model"
+)
+
+const (
+	gatewayClientID   = "cli"
+	gatewayClientMode = "cli"
+	gatewayProtocol   = 3
 )
 
 type Config struct {
@@ -101,6 +109,7 @@ func (c *Client) Start(ctx context.Context, eventHandler func(Event)) {
 			}
 
 			if err := c.connectAndServe(ctx); err != nil && ctx.Err() == nil {
+				logrus.Errorf("Gateway disconnected, retrying in %v: %v", c.cfg.ReconnectDelay, err)
 				time.Sleep(c.cfg.ReconnectDelay)
 				continue
 			}
@@ -128,9 +137,8 @@ func (c *Client) DispatchTask(ctx context.Context, agentID string, title string)
 	sessionKey := buildAgentSessionKey(agentID, c.cfg.DefaultSessionKey)
 	params := map[string]any{
 		"sessionKey":     sessionKey,
-		"content":        title,
+		"message":        title,
 		"idempotencyKey": newID("idem"),
-		"role":           "user",
 	}
 
 	result, err := c.call(ctx, "chat.send", params)
@@ -150,8 +158,7 @@ func (c *Client) DispatchTask(ctx context.Context, agentID string, title string)
 
 func (c *Client) RefreshSessions(ctx context.Context) error {
 	result, err := c.call(ctx, "sessions.list", map[string]any{
-		"limit":        100,
-		"messageLimit": 0,
+		"limit": 100,
 	})
 	if err != nil {
 		return err
@@ -175,10 +182,13 @@ func (c *Client) RefreshSessions(ctx context.Context) error {
 }
 
 func (c *Client) connectAndServe(ctx context.Context) error {
+	logrus.Infof("Connecting to gateway: %s", c.cfg.GatewayWSURL)
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, c.cfg.GatewayWSURL, nil)
 	if err != nil {
+		logrus.Errorf("Gateway dial failed: %v", err) // ← เพิ่ม
 		return err
 	}
+	logrus.Info("Gateway connected")
 	c.conn = conn
 	c.sessionSubsMu.Lock()
 	c.sessionSubs = make(map[string]bool)
@@ -220,7 +230,12 @@ func (c *Client) connectAndServe(ctx context.Context) error {
 		return fmt.Errorf("gateway connect failed: %s", gatewayErrorMessage(response.Error))
 	}
 
-	if token := firstString(response.Result["deviceToken"], nestedMapString(response.Result, "auth", "deviceToken")); token != "" && token != c.device.DeviceToken {
+	if token := firstString(
+		response.Result["deviceToken"],
+		nestedMapString(response.Result, "auth", "deviceToken"),
+		response.Payload["deviceToken"],
+		nestedMapString(response.Payload, "auth", "deviceToken"),
+	); token != "" && token != c.device.DeviceToken {
 		c.device.DeviceToken = token
 		if err := saveDevice(c.cfg.DeviceStorePath, c.device); err != nil {
 			return err
@@ -407,7 +422,10 @@ func (c *Client) call(ctx context.Context, method string, params map[string]any)
 		return nil, fmt.Errorf("%s failed: %s", method, gatewayErrorMessage(response.Error))
 	}
 
-	return response.Result, nil
+	if len(response.Result) > 0 {
+		return response.Result, nil
+	}
+	return response.Payload, nil
 }
 
 func (c *Client) awaitResponse(ctx context.Context, callID string) (rpcEnvelope, error) {
@@ -461,42 +479,57 @@ func (c *Client) readEnvelope() (rpcEnvelope, error) {
 }
 
 func (c *Client) buildConnectParams(nonce string) map[string]any {
-	signedAt := time.Now().UTC().Format(time.RFC3339)
+	signedAt := time.Now().UnixMilli()
+	scopes := []string{"operator.admin"}
+	signatureToken := strings.TrimSpace(c.cfg.GatewayToken)
+	if signatureToken == "" {
+		signatureToken = strings.TrimSpace(c.device.DeviceToken)
+	}
 	signaturePayload := strings.Join([]string{
-		"v2",
+		"v3",
 		c.device.DeviceID,
-		c.cfg.ClientID,
-		"server",
+		gatewayClientID,
+		gatewayClientMode,
 		"operator",
-		"*",
+		strings.Join(scopes, ","),
+		fmt.Sprintf("%d", signedAt),
+		signatureToken,
 		nonce,
-		signedAt,
+		normalizeDeviceMetadataForAuth(c.cfg.ClientPlatform),
+		normalizeDeviceMetadataForAuth(c.cfg.ClientDeviceFamily),
 	}, "|")
 
 	privateKey := decodePrivateKey(c.device.PrivateKey)
 	signature := ed25519.Sign(privateKey, []byte(signaturePayload))
 
 	auth := map[string]any{}
+	if strings.TrimSpace(c.cfg.GatewayToken) != "" {
+		auth["token"] = strings.TrimSpace(c.cfg.GatewayToken)
+	}
 	if c.device.DeviceToken != "" {
 		auth["deviceToken"] = c.device.DeviceToken
-	} else {
-		auth["token"] = c.cfg.GatewayToken
+		if _, ok := auth["token"]; !ok {
+			auth["token"] = c.device.DeviceToken
+		}
 	}
 
 	return map[string]any{
+		"minProtocol": gatewayProtocol,
+		"maxProtocol": gatewayProtocol,
 		"client": map[string]any{
-			"id":           c.cfg.ClientID,
+			"id":           gatewayClientID,
 			"version":      c.cfg.ClientVersion,
-			"mode":         "server",
+			"mode":         gatewayClientMode,
 			"platform":     c.cfg.ClientPlatform,
 			"deviceFamily": c.cfg.ClientDeviceFamily,
 		},
 		"role":   "operator",
-		"scopes": []string{"*"},
+		"scopes": scopes,
 		"auth":   auth,
 		"device": map[string]any{
 			"id":        c.device.DeviceID,
 			"publicKey": c.device.PublicKey,
+			"nonce":     nonce,
 			"signature": base64.RawURLEncoding.EncodeToString(signature),
 			"signedAt":  signedAt,
 		},
@@ -511,6 +544,11 @@ func loadOrCreateDevice(storePath string) (*DeviceIdentity, error) {
 	if raw, err := os.ReadFile(filepath.Clean(storePath)); err == nil {
 		var device DeviceIdentity
 		if err := json.Unmarshal(raw, &device); err == nil {
+			if normalizeLoadedDevice(&device) {
+				if err := saveDevice(storePath, &device); err != nil {
+					return nil, err
+				}
+			}
 			return &device, nil
 		}
 	}
@@ -523,7 +561,7 @@ func loadOrCreateDevice(storePath string) (*DeviceIdentity, error) {
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 	hash := sha256.Sum256(publicKey)
 	device := &DeviceIdentity{
-		DeviceID:   "sha256:" + base64.RawURLEncoding.EncodeToString(hash[:]),
+		DeviceID:   fmt.Sprintf("%x", hash[:]),
 		PublicKey:  base64.RawURLEncoding.EncodeToString(publicKey),
 		PrivateKey: base64.RawURLEncoding.EncodeToString(privateKey),
 	}
@@ -554,6 +592,30 @@ func decodePrivateKey(encoded string) ed25519.PrivateKey {
 		return nil
 	}
 	return ed25519.PrivateKey(raw)
+}
+
+var hex64Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+func normalizeLoadedDevice(device *DeviceIdentity) bool {
+	device.DeviceID = strings.ToLower(strings.TrimSpace(device.DeviceID))
+
+	publicKey, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(device.PublicKey))
+	if err != nil || len(publicKey) == 0 {
+		return false
+	}
+
+	expectedHash := sha256.Sum256(publicKey)
+	expectedID := fmt.Sprintf("%x", expectedHash[:])
+	if hex64Pattern.MatchString(device.DeviceID) && device.DeviceID == expectedID {
+		return false
+	}
+
+	device.DeviceID = expectedID
+	return true
+}
+
+func normalizeDeviceMetadataForAuth(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func gatewayErrorMessage(errorBody map[string]any) string {

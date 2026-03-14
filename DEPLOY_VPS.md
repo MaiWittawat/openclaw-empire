@@ -13,7 +13,7 @@ This backend is designed to run on the same Ubuntu VPS as OpenClaw Gateway and c
 Copy `.env.example` to `.env` and fill at least:
 
 ```env
-DB_HOST=127.0.0.1
+DB_HOST=psql
 DB_PORT=5432
 DB_USER=claw_admin
 DB_PASS=claw_admin
@@ -22,6 +22,7 @@ DB_NAME=claw_admin
 OPENCLAW_GATEWAY_WS_URL=ws://host.docker.internal:18789/ws
 OPENCLAW_GATEWAY_TOKEN=your_gateway_token
 OPENCLAW_DEFAULT_SESSION_KEY=main
+BACKEND_URL=http://claw-empire-backend:8080
 ```
 
 `OPENCLAW_DEVICE_STORE_PATH` should stay on a persistent volume so the device token can be reused after restarts.

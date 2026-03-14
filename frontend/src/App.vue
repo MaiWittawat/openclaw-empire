@@ -14,12 +14,24 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useThemeStore } from '@/stores/theme'
+import { useAgentsStore } from '@/stores/agents'
+import { useTasksStore } from '@/stores/tasks'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import RightPanel from '@/components/layout/RightPanel.vue'
 
 const themeStore = useThemeStore()
-onMounted(() => themeStore.init())
+const agentsStore = useAgentsStore()
+const tasksStore = useTasksStore()
+
+onMounted(async () => {
+  themeStore.init()
+  await Promise.all([
+    agentsStore.fetchAgents(),
+    tasksStore.fetchTasks(),
+    tasksStore.fetchStats(),
+  ])
+})
 </script>
 
 <style scoped>

@@ -1,59 +1,53 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { agentsApi } from '@/services/api'
 
-export const useAgentsStore = defineStore('agents', () => {
-  const agents = ref([
-    {
-      id: 'parae',
-      name: 'แพร',
-      role: 'Tech Lead',
-      emoji: '👩‍💻',
-      color: '#a78bfa',
-      status: 'working',
-      tokens: 12450,
-      tokenMax: 20000,
-    },
-    {
-      id: 'nova',
-      name: 'NOVA',
-      role: 'Researcher',
-      emoji: '🔍',
-      color: '#34d399',
-      status: 'working',
-      tokens: 8820,
-      tokenMax: 20000,
-    },
-    {
-      id: 'forge',
-      name: 'FORGE',
-      role: 'DevOps',
-      emoji: '🛠️',
-      color: '#60a5fa',
-      status: 'idle',
-      tokens: 3200,
-      tokenMax: 20000,
-    },
-    {
-      id: 'lyra',
-      name: 'LYRA',
-      role: 'Writer',
-      emoji: '✍️',
-      color: '#f472b6',
-      status: 'done',
-      tokens: 5400,
-      tokenMax: 20000,
-    },
-  ])
+const STATUS_ORDER = {
+  working: 0,
+  pending: 1,
+  idle: 2,
+  done: 3,
+  error: 4,
+}
 
+function normalizeAgent(agent) {
+  return {
+    id: agent.id,
+    name: agent.name || agent.id,
+    role: agent.role || 'OpenClaw Agent',
+    emoji: agent.avatar || '◆',
+    color: agent.color || '#0ea5e9',
+    status: agent.status || 'idle',
+    tokens: Number(agent.tokens || 0),
+    tokenMax: Number(agent.max_tokens || 20000) || 20000,
+    sessionKey: agent.session_key || '',
+    lastSeenAt: agent.last_seen_at || null,
+    updatedAt: agent.updated_at || null,
+    createdAt: agent.created_at || null,
+    raw: agent,
+  }
+}
+
+export const useAgentsStore = defineStore('agents', () => {
+  const agents = ref([])
   const selectedAgentId = ref(null)
+  const loading = ref(false)
+  const error = ref('')
+
+  const sortedAgents = computed(() =>
+    [...agents.value].sort((left, right) => {
+      const statusDelta = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99)
+      if (statusDelta !== 0) return statusDelta
+      return left.name.localeCompare(right.name)
+    })
+  )
 
   const selectedAgent = computed(() =>
-    agents.value.find((a) => a.id === selectedAgentId.value)
+    sortedAgents.value.find((agent) => agent.id === selectedAgentId.value) || null
   )
 
   const activeCount = computed(
-    () => agents.value.filter((a) => a.status === 'working').length
+    () => sortedAgents.value.filter((agent) => agent.status === 'working').length
   )
 
   function selectAgent(id) {
@@ -61,13 +55,36 @@ export const useAgentsStore = defineStore('agents', () => {
   }
 
   async function fetchAgents() {
+    loading.value = true
+    error.value = ''
     try {
       const data = await agentsApi.getAll()
-      if (data?.length) agents.value = data
-    } catch {
-      // Use mock data if backend not available
+      agents.value = Array.isArray(data) ? data.map(normalizeAgent) : []
+      if (!selectedAgentId.value && agents.value.length > 0) {
+        selectedAgentId.value = agents.value[0].id
+      }
+      if (
+        selectedAgentId.value &&
+        !agents.value.some((agent) => agent.id === selectedAgentId.value)
+      ) {
+        selectedAgentId.value = agents.value[0]?.id || null
+      }
+    } catch (err) {
+      error.value = err.message || 'Failed to fetch agents'
+      agents.value = []
+    } finally {
+      loading.value = false
     }
   }
 
-  return { agents, selectedAgent, selectedAgentId, activeCount, selectAgent, fetchAgents }
+  return {
+    agents: sortedAgents,
+    selectedAgent,
+    selectedAgentId,
+    activeCount,
+    loading,
+    error,
+    selectAgent,
+    fetchAgents,
+  }
 })

@@ -8,12 +8,12 @@
     <div class="task-content">
       <div class="task-title">{{ task.title }}</div>
       <div class="task-meta">
-        <span>{{ task.agentEmoji }} {{ task.agent }}</span>
+        <span>{{ task.agentEmoji }} {{ task.agentName || task.agent }}</span>
         <span>🕐 {{ task.time }}</span>
         <span :style="statusColor">{{ statusLabel }}</span>
       </div>
     </div>
-    <div class="task-tokens">{{ task.tokens.toLocaleString() }} tok</div>
+    <div class="task-tokens">{{ Number(task.tokens || 0).toLocaleString() }} tok</div>
   </div>
 </template>
 

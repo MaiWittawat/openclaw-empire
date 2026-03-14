@@ -23,17 +23,17 @@
         <StatCard
           icon="⚡"
           label="TOKENS USED"
-          value="284"
-          sup="K"
-          sub="≈ $0.42 today"
+          :value="tasksStore.stats.tokens_used || 0"
+          sup=""
+          sub="runtime total"
           color="var(--yellow)"
         />
         <StatCard
           icon="✅"
           label="SUCCESS RATE"
-          value="94"
+          :value="tasksStore.stats.success_rate || 0"
           sup="%"
-          sub='<span class="up">↑</span> 16 of 17 done'
+          :sub="`<span class='up'>↑</span> ${tasksStore.stats.done_tasks || 0} of ${tasksStore.stats.total_tasks || 0} done`"
           color="var(--accent2)"
         />
       </div>
@@ -96,7 +96,6 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
 import SectionTitle from '@/components/layout/SectionTitle.vue'
 import StatCard from '@/components/agents/StatCard.vue'
 import AgentCard from '@/components/agents/AgentCard.vue'
@@ -106,11 +105,6 @@ import { useTasksStore } from '@/stores/tasks'
 
 const agentsStore = useAgentsStore()
 const tasksStore = useTasksStore()
-
-onMounted(() => {
-  agentsStore.fetchAgents()
-  tasksStore.fetchTasks()
-})
 </script>
 
 <style scoped>

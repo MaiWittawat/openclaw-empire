@@ -24,10 +24,8 @@ WORKDIR /app
 
 # Copy binary มาจาก stage builder
 COPY --from=builder /server .
-# ตรวจสอบว่ามีโฟลเดอร์ config จริงๆ ก่อน copy
-COPY --from=builder /app/config/config.yaml ./config/
 
-EXPOSE 8212
+EXPOSE 8080
 
 # รัน binary
 CMD ["./server"]

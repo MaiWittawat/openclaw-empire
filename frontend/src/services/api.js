@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-// Base API instance - connects to your FastAPI backend
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -9,7 +8,6 @@ const api = axios.create({
   },
 })
 
-// Request interceptor - attach auth token if available
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
@@ -18,52 +16,43 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor - handle errors globally
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const body = response.data
+    if (body && typeof body === 'object' && 'error' in body) {
+      if (body.error) {
+        return Promise.reject(new Error(body.error))
+      }
+      return body.data
+    }
+    return body
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
       window.location.href = '/login'
     }
-    return Promise.reject(error.response?.data || error.message)
+    const message =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      error.message ||
+      'Request failed'
+    return Promise.reject(new Error(message))
   }
 )
 
-// ── AGENTS ──
 export const agentsApi = {
   getAll: () => api.get('/agents'),
-  getById: (id) => api.get(`/agents/${id}`),
-  updateStatus: (id, status) => api.patch(`/agents/${id}/status`, { status }),
 }
 
-// ── TASKS ──
 export const tasksApi = {
-  getAll: (params) => api.get('/tasks', { params }),
-  getById: (id) => api.get(`/tasks/${id}`),
-  create: (data) => api.post('/tasks', data),
-  cancel: (id) => api.delete(`/tasks/${id}`),
-  send: (agentId, task) => api.post('/tasks/send', { agent_id: agentId, task }),
+  getAll: () => api.get('/tasks'),
+  getEvents: (id) => api.get(`/tasks/${id}/events`),
+  send: (agentId, title) => api.post('/tasks', { agent_id: agentId, title }),
 }
 
-// ── STATS ──
 export const statsApi = {
-  getOverview: () => api.get('/stats/overview'),
-  getTokenUsage: (days = 7) => api.get('/stats/tokens', { params: { days } }),
-  getSystemInfo: () => api.get('/stats/system'),
-}
-
-// ── TELEGRAM ──
-export const telegramApi = {
-  getFeed: (limit = 50) => api.get('/telegram/feed', { params: { limit } }),
-  sendMessage: (agentId, message) =>
-    api.post('/telegram/send', { agent_id: agentId, message }),
-}
-
-// ── MEMORY ──
-export const memoryApi = {
-  getAll: () => api.get('/memory'),
-  search: (query) => api.get('/memory/search', { params: { q: query } }),
+  getOverview: () => api.get('/stats'),
 }
 
 export default api

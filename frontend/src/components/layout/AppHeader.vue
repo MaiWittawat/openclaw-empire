@@ -2,7 +2,7 @@
   <header class="app-header">
     <div class="logo">AI <span>Empire</span></div>
     <div class="header-right">
-      <div class="ticker">[ SYS:ONLINE ] &nbsp;[ TG:CONNECTED ] &nbsp;[ AGENTS:4 ]</div>
+      <div class="ticker">[ SYS:ONLINE ] &nbsp;[ TASKS:{{ tasksStore.tasks.length }} ] &nbsp;[ AGENTS:{{ agentsStore.agents.length }} ]</div>
 
       <!-- Theme Toggle -->
       <div class="theme-toggle-wrap" @click="themeStore.toggle()" title="Toggle light/dark">
@@ -23,7 +23,12 @@
 
 <script setup>
 import { useThemeStore } from '@/stores/theme'
+import { useAgentsStore } from '@/stores/agents'
+import { useTasksStore } from '@/stores/tasks'
+
 const themeStore = useThemeStore()
+const agentsStore = useAgentsStore()
+const tasksStore = useTasksStore()
 </script>
 
 <style scoped>

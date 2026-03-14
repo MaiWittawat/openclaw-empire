@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // Base API instance - connects to your FastAPI backend
 const api = axios.create({
-  baseURL: import.meta.env.VIT_SERVER_URL || 'http://localhost:8212/api',
+  baseURL: '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
